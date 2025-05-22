@@ -1,0 +1,11 @@
+SELECT 
+    name AS Company,
+    substr(ts, 1, 10) AS Date,
+    ROUND(AVG(volatility), 3) AS Avg_Volatility,
+    ROUND(MAX(volatility), 3) AS Max_Volatility,
+    ROUND(MIN(volatility), 3) AS Min_Volatility
+FROM "new-stocks-db"."aaron_kinesis_data_storage" 
+GROUP BY 
+    name, substr(ts, 1, 10)
+ORDER BY 
+    name, Date;

@@ -1,0 +1,71 @@
+import json
+import boto3
+import datetime
+from time import sleep
+import subprocess
+import sys
+import os
+
+kinesis = boto3.client('kinesis', "us-east-2")
+
+# Install yfinance in Lambda environment
+subprocess.check_call([sys.executable, "-m", "pip", "install", "--target", "/tmp", "yfinance"])
+sys.path.append('/tmp')
+import yfinance as yf
+
+def lambda_handler(event, context):
+    # List of stock tickers to collect data for
+    tickers = ['AMZN', 'BABA', 'MSFT', 'AAPL', 'GOOG', 'TSLA', 'NVDA', 'IBM', 'SAP', 'CSCO']
+    
+    trading_days = [
+        '2025-04-14', '2025-04-15', '2025-04-16', '2025-04-17',
+        '2025-04-21', '2025-04-22', '2025-04-23', '2025-04-24', '2025-04-25'
+    ]
+    
+    # Process each stock
+    for ticker in tickers:
+        # Process each trading day
+        for day in trading_days:
+            # Get stock data for this day at 5-minute intervals
+            stock = yf.Ticker(ticker)
+            data = stock.history(
+                start=day,
+                end=(datetime.datetime.strptime(day, '%Y-%m-%d') + datetime.timedelta(days=1)).strftime('%Y-%m-%d'),
+                interval='5m'
+            )
+            
+            # Process each data point
+            for index, row in data.iterrows():
+                # Skip if no data (market closed)
+                if not row['High'] or not row['Low']:
+                    continue
+                
+                # Create data record in required format
+                data_record = {
+                    "high": round(row['High'], 2),
+                    "low": round(row['Low'], 2),
+                    "volatility": round(row['High'] - row['Low'], 2),
+                    "ts": index.strftime('%Y-%m-%d %H:%M:%S-04:00'),
+                    "name": ticker
+                }
+                
+                # Convert to JSON string with newline
+                json_data = json.dumps(data_record) + "\n"
+                
+                # Print the data (for debugging)
+                print(json_data)
+                
+                # Send to Kinesis stream
+                kinesis.put_record(
+                    StreamName="data-stream-project",  # Replace with your stream name
+                    Data=json_data,
+                    PartitionKey=ticker
+                )
+                
+                # Sleep to simulate streaming
+                sleep(0.05)
+    
+    return {
+        'statusCode': 200,
+        'body': json.dumps('Data collection completed successfully!')
+    }
